@@ -8,8 +8,7 @@ Clone commit: `ee77a9abc31f5338365ee087945c5bcafac7f1ca`
 ## Current Status
 
 The N+ repository has been cloned onto Triton. The first released-checkpoint
-evaluation has been prepared and submitted, but has not started running yet as of
-the latest check.
+evaluation passed Stage 0 under the frontier judge. PPO clearly beat SFT.
 
 Downloaded released checkpoints for the first Stage 0 attempt:
 
@@ -32,17 +31,61 @@ scripts/evaluate_nplus_sft_ppo_frontier.py
 run_nplus_pythia28_frontier_eval_20261109.sh
 ```
 
-Submitted Slurm job:
+Completed Stage 0 jobs:
 
 ```text
-21481358 nplus-pythia28-frontier-20261109 PENDING on gpu-a100-80g, reason Priority
+21481358 nplus-pythia28-frontier-20261109 COMPLETED
+21482935 nplus-pythia28-frontier-judge-20261109 COMPLETED
 ```
 
-The job generates SFT/PPO summaries for 200 validation prompts, writes
-`outputs/nplus_pythia28_seed44413_frontier/policy_scores.jsonl`, and then runs
-the frontier pairwise judge only if `AALTO_OPENAI_API_KEY` or `OPENAI_API_KEY` is
-present in the batch environment. If no key is present, it should skip only the
-frontier stage after summary generation.
+Stage 0 frontier result:
+
+```text
+ppo_vs_sft:
+  n=200
+  ppo_wins=168
+  sft_wins=29
+  ties=3
+  ppo_win_rate_all=0.84
+  ppo_win_rate_ignoring_ties=0.8527918781725888
+```
+
+Output:
+
+```text
+outputs/nplus_pythia28_seed44413_frontier/frontier_judge/frontier_metrics.json
+```
+
+Stage 1/2 integration has now been added:
+
+```text
+summarize_from_feedback_details/reward_proxy.py
+summarize_from_feedback_details/reward.py
+summarize_from_feedback_details/ppo.py
+deepspeed_4gpu.yaml
+run_nplus_pythia28_residual_rm_20261109.sh
+run_nplus_pythia28_naive_proxy_ppo_20261109.sh
+run_nplus_pythia28_residual_proxy_ppo_20261109.sh
+```
+
+Implementation summary:
+
+- `reward.py` has optional `--residual_learning`.
+- Residual RM training optimizes the Bradley-Terry margin
+  `learned_chosen - learned_rejected + proxy_chosen - proxy_rejected`.
+- `ppo.py` has `--reward_mode learned|learned_plus_proxy|proxy_only`.
+- Naive summation PPO uses the released N+ RM with `--reward_mode learned_plus_proxy`.
+- Residual PPO uses the residual RM with `--reward_mode learned_plus_proxy`.
+- Proxy reward implementation is copied into the N+ repo from the previous project
+  as `reward_proxy.py`.
+
+Submitted Stage 1/2 jobs:
+
+```text
+21483923 nplus-pythia28-residual-rm-20261109      PENDING
+21483924 nplus-pythia28-naive-proxy-ppo-20261109  PENDING
+21483925 nplus-pythia28-residual-proxy-ppo-20261109 PENDING dependency afterok:21483923
+```
 
 The motivation is to stop debugging residual reward composition on a summarization
 pipeline where vanilla RLHF itself does not clearly improve over SFT. Instead, use
@@ -95,23 +138,24 @@ evidence that the current TL;DR PPO substrate is not a reliable stage-0 benchmar
 
 ## Preferred Next Steps
 
-1. Watch job `21481358`.
-2. If it completes summary generation but skips frontier judging due to missing
-   API key, resubmit the same launcher from a shell that exports
-   `AALTO_OPENAI_API_KEY`, or run only the frontier command against the generated
-   `policy_scores.jsonl`.
-3. If the job fails before summary generation completes, inspect the Slurm logs
-   and fix the evaluator.
-4. If Stage 0 passes, plan minimal training modifications for Stage 1 and Stage 2.
+1. Watch jobs `21483923`, `21483924`, and `21483925`.
+2. If `21483923` fails, `21483925` will remain dependency-blocked; inspect the
+   residual RM logs first.
+3. If PPO jobs OOM on 4xA100, reduce `local_rollout_forward_batch_size` and/or
+   `local_micro_batch_size` in the launcher scripts.
+4. After each PPO arm completes, evaluate generated summaries with the same
+   `policy_scores.jsonl` / frontier-pairwise-judge path used for Stage 0.
 
 Check with:
 
 ```bash
 cd /scratch/work/kompatj1/summarize_from_feedback_details
-squeue -j 21481358 -o "%.18i %.45j %.10T %.10M %.80R %.24P"
-sacct -j 21481358 --format=JobID,JobName%45,State,ExitCode,Start,End,Elapsed -P
-tail -120 logs/nplus-pythia28-frontier-20261109-21481358.out
-tail -120 logs/nplus-pythia28-frontier-20261109-21481358.err
+squeue -j 21483923,21483924,21483925 -o "%.18i %.50j %.10T %.10M %.80R %.24P"
+sacct -j 21483923,21483924,21483925 --format=JobID,JobName%50,State,ExitCode,Start,End,Elapsed -P
+tail -120 logs/nplus-pythia28-residual-rm-20261109-21483923.out
+tail -120 logs/nplus-pythia28-residual-rm-20261109-21483923.err
+tail -120 logs/nplus-pythia28-naive-proxy-ppo-20261109-21483924.out
+tail -120 logs/nplus-pythia28-naive-proxy-ppo-20261109-21483924.err
 ```
 
 ## Compute Expectations

@@ -33,6 +33,8 @@ from transformers import (
 )
 from huggingface_hub import HfApi
 
+from summarize_from_feedback_details.reward_proxy import batch_proxy_rewards
+
 api = HfApi()
 
 
@@ -121,6 +123,24 @@ class Args:
     """the url of the saved model in the Hugging Face Hub (will be autoset)"""
     output_dir: str = "models/reward_model"
     """Where to save the model"""
+    residual_learning: bool = False
+    """Whether to train the scalar model as a residual on top of the proxy reward."""
+    proxy_reward_scale: float = 0.0
+    """Scale applied to the proxy reward before adding it to residual/naive rewards."""
+    proxy_reward_normalize: bool = False
+    """Whether to normalize the scaled proxy reward."""
+    proxy_reward_mean: float = 0.0
+    """Mean used when proxy_reward_normalize is enabled."""
+    proxy_reward_std: float = 1.0
+    """Std used when proxy_reward_normalize is enabled."""
+    proxy_reward_clip: Optional[float] = None
+    """Optional symmetric clip used when proxy_reward_normalize is enabled."""
+    proxy_lambda_coverage: float = 1.0
+    """Coverage weight in the proxy reward."""
+    proxy_lambda_length: float = 1.0
+    """Length weight in the proxy reward."""
+    proxy_lambda_redundancy: float = 1.0
+    """Redundancy penalty weight in the proxy reward."""
 
 
 def parse_args() -> tuple[Args, Accelerator]:
@@ -235,6 +255,22 @@ def get_reward(model, query_responses, tokenizer, context_length=0):
     # https://github.com/huggingface/transformers/blob/dc68a39c8111217683bf49a4912d0c9018bab33d/src/transformers/models/gpt2/modeling_gpt2.py#L1454
     return reward_logits[torch.arange(reward_logits.size(0), device=reward_logits.device), sequence_lengths].squeeze(-1)
 
+
+def proxy_scores(args: Args, tokenizer, query_tokens, response_tokens):
+    return batch_proxy_rewards(
+        tokenizer,
+        query_tokens,
+        response_tokens,
+        scale=args.proxy_reward_scale,
+        normalize=args.proxy_reward_normalize,
+        mean=args.proxy_reward_mean,
+        std=args.proxy_reward_std,
+        clip=args.proxy_reward_clip,
+        lambda_coverage=args.proxy_lambda_coverage,
+        lambda_length=args.proxy_lambda_length,
+        lambda_redundancy=args.proxy_lambda_redundancy,
+    )
+
 def evaluate(args: Args, accelerator, tokenizer, model, dataloader):
     model.eval()
     with torch.no_grad():
@@ -245,7 +281,12 @@ def evaluate(args: Args, accelerator, tokenizer, model, dataloader):
                 predicted_reward = get_reward(model, query_responses, tokenizer)
                 chosen_rewards = predicted_reward[:data['query_chosen_token'].shape[0]]
                 rejected_rewards = predicted_reward[data['query_chosen_token'].shape[0]:]
-                accuracy = (chosen_rewards > rejected_rewards).float()
+                reward_margin = chosen_rewards - rejected_rewards
+                if args.residual_learning:
+                    chosen_proxy = proxy_scores(args, tokenizer, data["query_token"], data["chosen_token"])
+                    rejected_proxy = proxy_scores(args, tokenizer, data["query_token"], data["rejected_token"])
+                    reward_margin = reward_margin + chosen_proxy - rejected_proxy
+                accuracy = (reward_margin > 0).float()
                 accuracy = accelerator.gather(accuracy)
                 chosen_rewards = accelerator.gather(chosen_rewards)
                 rejected_rewards = accelerator.gather(rejected_rewards)
@@ -407,8 +448,13 @@ if __name__ == "__main__":
                 predicted_reward = get_reward(model, query_responses, tokenizer)
                 chosen_rewards = predicted_reward[:data['query_chosen_token'].shape[0]]
                 rejected_rewards = predicted_reward[data['query_chosen_token'].shape[0]:]
-                accuracy = (chosen_rewards > rejected_rewards).float().mean()
-                loss = -F.logsigmoid(chosen_rewards - rejected_rewards).mean()
+                reward_margin = chosen_rewards - rejected_rewards
+                if args.residual_learning:
+                    chosen_proxy = proxy_scores(args, tokenizer, data["query_token"], data["chosen_token"])
+                    rejected_proxy = proxy_scores(args, tokenizer, data["query_token"], data["rejected_token"])
+                    reward_margin = reward_margin + chosen_proxy - rejected_proxy
+                accuracy = (reward_margin > 0).float().mean()
+                loss = -F.logsigmoid(reward_margin).mean()
                 accelerator.backward(loss)
                 optimizer.step()
                 optimizer.zero_grad()

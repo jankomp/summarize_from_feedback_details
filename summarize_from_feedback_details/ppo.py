@@ -33,6 +33,8 @@ from transformers import (
     PreTrainedModel,
 )
 
+from summarize_from_feedback_details.reward_proxy import batch_proxy_rewards
+
 torch.set_printoptions(precision=4, sci_mode=False)
 api = HfApi()
 INVALID_LOGPROB = 1.0
@@ -136,6 +138,24 @@ class Args:
     """the path to the reward model"""
     sft_model_path: str = "EleutherAI/pythia-160m"
     """the path to the sft model"""
+    reward_mode: Literal["learned", "learned_plus_proxy", "proxy_only"] = "learned"
+    """Which terminal score to optimize in PPO."""
+    proxy_reward_scale: float = 0.0
+    """Scale applied to the proxy reward before adding it to PPO rewards."""
+    proxy_reward_normalize: bool = False
+    """Whether to normalize the scaled proxy reward."""
+    proxy_reward_mean: float = 0.0
+    """Mean used when proxy_reward_normalize is enabled."""
+    proxy_reward_std: float = 1.0
+    """Std used when proxy_reward_normalize is enabled."""
+    proxy_reward_clip: Optional[float] = None
+    """Optional symmetric clip used when proxy_reward_normalize is enabled."""
+    proxy_lambda_coverage: float = 1.0
+    """Coverage weight in the proxy reward."""
+    proxy_lambda_length: float = 1.0
+    """Length weight in the proxy reward."""
+    proxy_lambda_redundancy: float = 1.0
+    """Redundancy penalty weight in the proxy reward."""
 
     # wandb and HF tracking configs
     track: bool = False
@@ -368,6 +388,22 @@ def forward(model, query_responses, tokenizer):
     )
 
 
+def proxy_scores(args: Args, tokenizer, query_tokens, response_tokens):
+    return batch_proxy_rewards(
+        tokenizer,
+        query_tokens,
+        response_tokens,
+        scale=args.proxy_reward_scale,
+        normalize=args.proxy_reward_normalize,
+        mean=args.proxy_reward_mean,
+        std=args.proxy_reward_std,
+        clip=args.proxy_reward_clip,
+        lambda_coverage=args.proxy_lambda_coverage,
+        lambda_length=args.proxy_lambda_length,
+        lambda_redundancy=args.proxy_lambda_redundancy,
+    )
+
+
 def evaluate(reward_model, policy, tokenizer, dataloader, generation_config, sampling=True):
     eval_storage = defaultdict(list)
     with torch.no_grad():
@@ -387,7 +423,16 @@ def evaluate(reward_model, policy, tokenizer, dataloader, generation_config, sam
             responses = query_responses[:, context_length:]
             postprocessed_responses = truncate_response(args, tokenizer, responses)
             postprocessed_query_responses = torch.cat((queries, postprocessed_responses), 1)
-            _, score, _ = get_reward(reward_model, postprocessed_query_responses, tokenizer, queries.shape[1])
+            _, learned_score, _ = get_reward(reward_model, postprocessed_query_responses, tokenizer, queries.shape[1])
+            proxy_score = proxy_scores(args, tokenizer, queries, postprocessed_responses)
+            if args.reward_mode == "learned":
+                score = learned_score
+            elif args.reward_mode == "learned_plus_proxy":
+                score = learned_score + proxy_score
+            elif args.reward_mode == "proxy_only":
+                score = proxy_score
+            else:
+                raise ValueError(f"Unsupported reward_mode: {args.reward_mode}")
 
             eval_storage["query_token"].extend(queries)
             eval_storage["reference_response_token"].extend(reference_response_token)
@@ -638,7 +683,16 @@ if __name__ == "__main__":
                     accelerator.unwrap_model(model).critic, query_response, tokenizer, context_length
                 )
                 value = full_value[:, context_length - 1 : -1].squeeze(-1)
-                _, score, _ = get_reward(reward_model, postprocessed_query_response, tokenizer, context_length)
+                _, learned_score, _ = get_reward(reward_model, postprocessed_query_response, tokenizer, context_length)
+                proxy_score = proxy_scores(args, tokenizer, query, postprocessed_response)
+                if args.reward_mode == "learned":
+                    score = learned_score
+                elif args.reward_mode == "learned_plus_proxy":
+                    score = learned_score + proxy_score
+                elif args.reward_mode == "proxy_only":
+                    score = proxy_score
+                else:
+                    raise ValueError(f"Unsupported reward_mode: {args.reward_mode}")
 
                 query_responses.append(query_response)
                 responses.append(response)
