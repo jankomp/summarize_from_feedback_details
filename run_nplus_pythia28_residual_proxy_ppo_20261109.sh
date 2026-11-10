@@ -11,14 +11,15 @@
 set -euo pipefail
 
 cd /scratch/work/kompatj1/summarize_from_feedback_details
-mkdir -p logs outputs models .tmp
+mkdir -p logs outputs models
 
+export TMPDIR=${TMPDIR:-/tmp/${USER}/nplus-${SLURM_JOB_ID:-manual}}
 export HF_HOME=${HF_HOME:-/scratch/work/kompatj1/summarize_from_feedback_details/.hf_home}
-export HF_DATASETS_CACHE=${HF_DATASETS_CACHE:-/scratch/work/kompatj1/summarize_from_feedback_details/.hf_datasets_cache}
+export HF_DATASETS_CACHE=${HF_DATASETS_CACHE:-${TMPDIR}/hf_datasets_cache}
 export TRANSFORMERS_CACHE=${TRANSFORMERS_CACHE:-/scratch/work/kompatj1/summarize_from_feedback_details/.hf_home/transformers}
-export TMPDIR=${TMPDIR:-/scratch/work/kompatj1/summarize_from_feedback_details/.tmp}
 export TOKENIZERS_PARALLELISM=${TOKENIZERS_PARALLELISM:-false}
 export PYTHONPATH=/scratch/work/kompatj1/summarize_from_feedback_details:${PYTHONPATH:-}
+mkdir -p "$TMPDIR" "$HF_DATASETS_CACHE"
 
 SFT_MODEL_PATH="${SFT_MODEL_PATH:-/scratch/work/kompatj1/summarize_from_feedback_details/.hf_home/hub/models--vwxyzjn--EleutherAI_pythia-2.8b-deduped__sft__tldr/snapshots/9fad61fe3556e5365e485ec84cc790811ef9704c}"
 REWARD_MODEL_PATH="${REWARD_MODEL_PATH:-models/EleutherAI/pythia-2.8b-deduped/reward_model_residual_proxy_s1_44413}"
