@@ -18,6 +18,7 @@ export HF_HOME=${HF_HOME:-/scratch/work/kompatj1/summarize_from_feedback_details
 export HF_DATASETS_CACHE=${HF_DATASETS_CACHE:-${TMPDIR}/hf_datasets_cache}
 export TRANSFORMERS_CACHE=${TRANSFORMERS_CACHE:-/scratch/work/kompatj1/summarize_from_feedback_details/.hf_home/transformers}
 export TOKENIZERS_PARALLELISM=${TOKENIZERS_PARALLELISM:-false}
+export PATH=/scratch/work/kompatj1/reward_composition_LLM/.venv/bin:${PATH}
 export PYTHONPATH=/scratch/work/kompatj1/summarize_from_feedback_details:${PYTHONPATH:-}
 mkdir -p "$TMPDIR" "$HF_DATASETS_CACHE"
 
