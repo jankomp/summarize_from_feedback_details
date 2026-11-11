@@ -26,7 +26,7 @@ REWARD_MODEL_PATH="${REWARD_MODEL_PATH:-/scratch/work/kompatj1/summarize_from_fe
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/smoke/naive_proxy_ppo_pythia28_1gpu}"
 PROXY_SCALE="${PROXY_SCALE:-1.0}"
 
-/scratch/work/kompatj1/reward_composition_LLM/.venv/bin/accelerate launch --config_file deepspeed_1gpu.yaml \
+/scratch/work/kompatj1/reward_composition_LLM/.venv/bin/accelerate launch --config_file deepspeed_1gpu_cpu_optimizer.yaml \
   summarize_from_feedback_details/ppo.py \
   --base_model EleutherAI/pythia-2.8b-deduped \
   --sft_model_path "$SFT_MODEL_PATH" \
