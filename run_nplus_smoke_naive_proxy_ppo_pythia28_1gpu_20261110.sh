@@ -35,6 +35,7 @@ PROXY_SCALE="${PROXY_SCALE:-1.0}"
   --deepspeed \
   --seed 44413 \
   --reward_mode learned_plus_proxy \
+  --offload \
   --proxy_reward_scale "$PROXY_SCALE" \
   --total_episodes 2 \
   --response_length 8 \

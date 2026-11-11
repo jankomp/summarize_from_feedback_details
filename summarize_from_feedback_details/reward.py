@@ -58,6 +58,8 @@ class Args:
     """How often to print sample output"""
     run_eval: bool = False
     """Whether to run evaluation"""
+    max_norm_samples: Optional[int] = None
+    """Optional cap on reward-normalization samples, useful for smoke tests."""
 
     # optimizer args
     eps: float = 1e-5
@@ -503,6 +505,8 @@ if __name__ == "__main__":
             torch.cuda.empty_cache()
 
     norm_dataset = load_dataset(args.query_dataset, split="train")
+    if args.max_norm_samples is not None:
+        norm_dataset = norm_dataset.select(range(min(args.max_norm_samples, len(norm_dataset))))
     norm_dataset = norm_dataset.with_format("torch", columns=["query_token", "reference_response_token", "query_reference_response_token"])
     norm_dataset = norm_dataset.shuffle(seed=local_seed)
     norm_dataloader = DataLoader(norm_dataset, batch_size=args.local_eval_batch_size)

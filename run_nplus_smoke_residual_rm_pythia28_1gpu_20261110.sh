@@ -35,6 +35,7 @@ PROXY_SCALE="${PROXY_SCALE:-1.0}"
   --residual_learning \
   --proxy_reward_scale "$PROXY_SCALE" \
   --total_episodes 32 \
+  --max_norm_samples 16 \
   --gradient_accumulation_steps 2 \
   --local_micro_batch_size 1 \
   --local_eval_batch_size 1
