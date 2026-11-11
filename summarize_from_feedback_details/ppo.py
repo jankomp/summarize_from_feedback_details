@@ -526,10 +526,12 @@ if __name__ == "__main__":
     else:
         critic: PreTrainedModel = ScalarModel.from_pretrained(
             args.reward_model_path,
+            config=scalar_model_config,
             trust_remote_code=True,
         )
         reward_model: PreTrainedModel = ScalarModel.from_pretrained(
             args.reward_model_path,
+            config=scalar_model_config,
             trust_remote_code=True,
         )
     ref_policy = AutoModelForCausalLM.from_pretrained(args.sft_model_path, config=model_config, trust_remote_code=True)

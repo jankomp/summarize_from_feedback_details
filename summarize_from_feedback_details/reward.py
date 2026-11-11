@@ -1,6 +1,7 @@
 import os
 import random
 import time
+import contextlib
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from types import SimpleNamespace
@@ -277,7 +278,8 @@ def evaluate(args: Args, accelerator, tokenizer, model, dataloader):
         items = defaultdict(list)
         for data in tqdm(dataloader):
             query_responses = torch.cat((data["query_chosen_token"], data["query_rejected_token"]), dim=0)
-            with accelerator.accumulate(model):
+            accumulate_context = contextlib.nullcontext() if args.deepspeed else accelerator.accumulate(model)
+            with accumulate_context:
                 predicted_reward = get_reward(model, query_responses, tokenizer)
                 chosen_rewards = predicted_reward[:data['query_chosen_token'].shape[0]]
                 rejected_rewards = predicted_reward[data['query_chosen_token'].shape[0]:]
@@ -444,7 +446,8 @@ if __name__ == "__main__":
             update += 1
             global_step += args.micro_batch_size
             query_responses = torch.cat((data["query_chosen_token"], data["query_rejected_token"]), dim=0)
-            with accelerator.accumulate(model):
+            accumulate_context = contextlib.nullcontext() if args.deepspeed else accelerator.accumulate(model)
+            with accumulate_context:
                 predicted_reward = get_reward(model, query_responses, tokenizer)
                 chosen_rewards = predicted_reward[:data['query_chosen_token'].shape[0]]
                 rejected_rewards = predicted_reward[data['query_chosen_token'].shape[0]:]
