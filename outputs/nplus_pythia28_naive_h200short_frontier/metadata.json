@@ -1,0 +1,12 @@
+{
+  "sft_repo": "vwxyzjn/EleutherAI_pythia-2.8b-deduped__sft__tldr",
+  "sft_revision": "sft__44413__1708611267",
+  "vanilla_repo": "vwxyzjn/EleutherAI_pythia-2.8b-deduped__ppo_left_padding_new_nowhiten_reward__tldr",
+  "vanilla_revision": "ppo_left_padding_new_nowhiten_reward__44413__1710356835",
+  "naive_path": "models/EleutherAI/pythia-2.8b-deduped/policy_model_naive_proxy_s1_44413_h200short",
+  "dataset": "vwxyzjn/summarize_from_feedback_tldr_3_filtered_oai_preprocessing_1706381144",
+  "split": "validation",
+  "num_prompts": 200,
+  "max_new_tokens": 53,
+  "temperature": 0.01
+}
