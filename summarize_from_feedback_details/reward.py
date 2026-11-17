@@ -128,6 +128,8 @@ class Args:
     """Where to save the model"""
     residual_learning: bool = False
     """Whether to train the scalar model as a residual on top of the proxy reward."""
+    reward_output_l2: float = 0.0
+    """L2 penalty on scalar reward outputs, useful for keeping residual rewards small."""
     proxy_reward_scale: float = 0.0
     """Scale applied to the proxy reward before adding it to residual/naive rewards."""
     proxy_reward_normalize: bool = False
@@ -460,6 +462,9 @@ if __name__ == "__main__":
                     reward_margin = reward_margin + chosen_proxy - rejected_proxy
                 accuracy = (reward_margin > 0).float().mean()
                 loss = -F.logsigmoid(reward_margin).mean()
+                if args.reward_output_l2 > 0:
+                    reward_l2 = 0.5 * (chosen_rewards.float().pow(2).mean() + rejected_rewards.float().pow(2).mean())
+                    loss = loss + args.reward_output_l2 * reward_l2
                 accelerator.backward(loss)
                 optimizer.step()
                 optimizer.zero_grad()
