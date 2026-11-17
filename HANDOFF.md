@@ -7,6 +7,60 @@ Clone commit: `ee77a9abc31f5338365ee087945c5bcafac7f1ca`
 
 ## Current Status
 
+### Update 2026-11-13 UTC
+
+Deadline pressure: target is to have vanilla PPO, naive proxy PPO, and residual
+proxy PPO models generate summaries for the same prompt set before 2026-11-18.
+
+Stage 0 remains valid only for the 2.8B released N+ PPO checkpoint. Smaller
+released checkpoints were evaluated and should not be used as fallback substrates:
+
+```text
+2.8B: PPO 168 wins, SFT 29 wins, 3 ties
+1B:   PPO 81 wins,  SFT 117 wins, 2 ties
+410M: PPO 29 wins,  SFT 167 wins, 4 ties
+```
+
+Recent PPO smokes completed successfully:
+
+```text
+21550824  2-GPU A100 debug PPO smoke       COMPLETED
+21523693  2-GPU A100 PPO smoke             COMPLETED
+21550921  2-GPU H200-short PPO smoke       COMPLETED
+```
+
+Residual RM 4-GPU smoke now completed successfully:
+
+```text
+21561870  4-GPU A100 debug residual RM smoke    COMPLETED
+```
+
+Current real jobs:
+
+```text
+Naive proxy PPO candidates:
+21550926  A100        PENDING, start estimate 2026-11-15 22:32 UTC
+21582386  H100-short  PENDING
+21582387  H200-short  PENDING
+
+Residual RM candidates:
+21522814  A100        PENDING, start estimate 2026-11-15 00:45 UTC
+21582388  H200-short  PENDING, output reward_model_residual_proxy_s1_44413_h200short
+
+Residual proxy PPO candidates:
+21561750  A100        PENDING, dependency afterok:21522814
+21561802  H100-short  PENDING, dependency afterok:21522814
+21561803  H200-short  PENDING, dependency afterok:21522814
+21582389  H200-short  PENDING, dependency afterok:21582388
+```
+
+Use the released 2.8B PPO checkpoint as the vanilla PPO model. After all policy
+artifacts exist, generate summaries for the same prompts and run frontier judge
+scoring afterward; that should be mostly API-bound rather than GPU-bound.
+
+Stale smoke jobs 21550902 and 21561876 were cancelled after the real fallback
+jobs above were submitted.
+
 The N+ repository has been cloned onto Triton. The first released-checkpoint
 evaluation passed Stage 0 under the frontier judge. PPO clearly beat SFT.
 
