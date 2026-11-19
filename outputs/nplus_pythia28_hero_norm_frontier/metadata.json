@@ -1,0 +1,22 @@
+{
+  "base_policy_scores": "outputs/nplus_pythia28_residual_h200ellis1n_frontier/policy_scores.jsonl",
+  "base_policies": [
+    "sft",
+    "vanilla"
+  ],
+  "policies": [
+    {
+      "name": "naive",
+      "path": "models/EleutherAI/pythia-2.8b-deduped/policy_model_naive_proxy_s1_44413_hero_norm_h200ellis1n"
+    },
+    {
+      "name": "residual",
+      "path": "models/EleutherAI/pythia-2.8b-deduped/policy_model_residual_proxy_s1_44413_hero_norm_reg_h200ellis1n"
+    }
+  ],
+  "dataset": "vwxyzjn/summarize_from_feedback_tldr_3_filtered_oai_preprocessing_1706381144",
+  "split": "validation",
+  "num_prompts": 200,
+  "max_new_tokens": 53,
+  "temperature": 0.01
+}
