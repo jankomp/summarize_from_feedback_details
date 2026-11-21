@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
+from typing import Literal
 
 import torch
 
@@ -46,7 +47,25 @@ def proxy_reward(
     )
 
 
-def normalize_value(value: float, mean: float, std: float, clip: float | None) -> float:
+def normalize_value(
+    value: float,
+    mean: float,
+    std: float,
+    clip: float | None,
+    normalization: Literal["zscore", "hero_minmax"] = "zscore",
+    min_value: float = 0.0,
+    max_value: float = 1.0,
+    target_min: float = -1.0,
+    target_max: float = 1.0,
+) -> float:
+    if normalization == "hero_minmax":
+        if max_value <= min_value:
+            raise ValueError("proxy_reward_max must be greater than proxy_reward_min")
+        clipped = max(min_value, min(max_value, value))
+        scaled = (clipped - min_value) / (max_value - min_value)
+        return target_min + scaled * (target_max - target_min)
+    if normalization != "zscore":
+        raise ValueError(f"Unsupported proxy reward normalization: {normalization}")
     if std <= 0:
         raise ValueError("proxy_reward_std must be positive")
     normalized = (value - mean) / std
@@ -64,9 +83,14 @@ def batch_proxy_rewards(
     mean: float,
     std: float,
     clip: float | None,
-    lambda_coverage: float,
-    lambda_length: float,
-    lambda_redundancy: float,
+    normalization: Literal["zscore", "hero_minmax"] = "zscore",
+    min_value: float = 0.0,
+    max_value: float = 1.0,
+    target_min: float = -1.0,
+    target_max: float = 1.0,
+    lambda_coverage: float = 1.0,
+    lambda_length: float = 1.0,
+    lambda_redundancy: float = 1.0,
     skip_special_tokens: bool = True,
 ) -> torch.Tensor:
     values = []
@@ -83,6 +107,16 @@ def batch_proxy_rewards(
             lambda_redundancy=lambda_redundancy,
         )
         if normalize:
-            value = normalize_value(value, mean=mean, std=std, clip=clip)
+            value = normalize_value(
+                value,
+                mean=mean,
+                std=std,
+                clip=clip,
+                normalization=normalization,
+                min_value=min_value,
+                max_value=max_value,
+                target_min=target_min,
+                target_max=target_max,
+            )
         values.append(value)
     return torch.tensor(values, dtype=torch.float32, device=query_tokens.device)

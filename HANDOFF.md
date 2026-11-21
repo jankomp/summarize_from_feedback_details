@@ -7,6 +7,61 @@ Clone commit: `ee77a9abc31f5338365ee087945c5bcafac7f1ca`
 
 ## Current Status
 
+### Update 2026-11-21 UTC
+
+New tanh/HERO-style experiment family submitted on the ELLIS H200 partition.
+This run bounds learned reward-model outputs with `tanh` and maps the proxy
+reward to `[-1, 1]` using fixed p05/p95 calibration anchors from 20k reference
+summaries (`0.9867522559599717`, `1.694445598247719`). The intent is to keep the
+proxy on the same scale as tanh-bounded learned rewards, closer to the HERO-style
+bounded normalization idea.
+
+Code changes:
+
+```text
+summarize_from_feedback_details/reward_proxy.py
+summarize_from_feedback_details/reward.py
+summarize_from_feedback_details/ppo.py
+```
+
+New launchers:
+
+```text
+run_nplus_pythia28_vanilla_rm_tanh_hero_h200ellis1n_20261121.sh
+run_nplus_pythia28_residual_rm_tanh_hero_h200ellis1n_20261121.sh
+run_nplus_pythia28_vanilla_ppo_tanh_hero_h200ellis1n_20261121.sh
+run_nplus_pythia28_naive_proxy_ppo_tanh_hero_h200ellis1n_20261121.sh
+run_nplus_pythia28_residual_proxy_ppo_tanh_hero_h200ellis1n_20261121.sh
+```
+
+Submitted jobs:
+
+```text
+21740252  vanilla tanh RM
+21740253  residual tanh RM with HERO-style proxy normalization
+21740254  vanilla PPO using tanh vanilla RM, afterok:21740252
+21740255  naive proxy PPO using tanh vanilla RM + normalized proxy, afterok:21740252
+21740256  residual proxy PPO using tanh residual RM + normalized proxy, afterok:21740253
+```
+
+Expected output directories:
+
+```text
+models/EleutherAI/pythia-2.8b-deduped/reward_model_vanilla_s1_44413_tanh_hero_h200ellis1n
+models/EleutherAI/pythia-2.8b-deduped/reward_model_residual_proxy_s1_44413_tanh_hero_h200ellis1n
+models/EleutherAI/pythia-2.8b-deduped/policy_model_vanilla_rm_s1_44413_tanh_hero_h200ellis1n
+models/EleutherAI/pythia-2.8b-deduped/policy_model_naive_proxy_s1_44413_tanh_hero_h200ellis1n
+models/EleutherAI/pythia-2.8b-deduped/policy_model_residual_proxy_s1_44413_tanh_hero_h200ellis1n
+```
+
+Validation performed before submission:
+
+```text
+python3 -m py_compile summarize_from_feedback_details/reward_proxy.py summarize_from_feedback_details/reward.py summarize_from_feedback_details/ppo.py
+bash -n on all five launchers
+tyro parser smoke checks for the new RM and PPO flags
+```
+
 ### Update 2026-11-13 UTC
 
 Deadline pressure: target is to have vanilla PPO, naive proxy PPO, and residual

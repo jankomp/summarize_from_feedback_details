@@ -130,16 +130,30 @@ class Args:
     """Whether to train the scalar model as a residual on top of the proxy reward."""
     reward_output_l2: float = 0.0
     """L2 penalty on scalar reward outputs, useful for keeping residual rewards small."""
+    reward_output_tanh: bool = False
+    """Whether to bound scalar reward outputs with tanh before preference composition."""
+    reward_output_scale: float = 1.0
+    """Multiplier applied after tanh when reward_output_tanh is enabled."""
     proxy_reward_scale: float = 0.0
     """Scale applied to the proxy reward before adding it to residual/naive rewards."""
     proxy_reward_normalize: bool = False
     """Whether to normalize the scaled proxy reward."""
+    proxy_reward_normalization: Literal["zscore", "hero_minmax"] = "zscore"
+    """Proxy normalization rule."""
     proxy_reward_mean: float = 0.0
     """Mean used when proxy_reward_normalize is enabled."""
     proxy_reward_std: float = 1.0
     """Std used when proxy_reward_normalize is enabled."""
     proxy_reward_clip: Optional[float] = None
     """Optional symmetric clip used when proxy_reward_normalize is enabled."""
+    proxy_reward_min: float = 0.9867522559599717
+    """Lower HERO-style calibration anchor for proxy_reward_normalization='hero_minmax'."""
+    proxy_reward_max: float = 1.694445598247719
+    """Upper HERO-style calibration anchor for proxy_reward_normalization='hero_minmax'."""
+    proxy_reward_target_min: float = -1.0
+    """Lower target value for HERO-style proxy normalization."""
+    proxy_reward_target_max: float = 1.0
+    """Upper target value for HERO-style proxy normalization."""
     proxy_lambda_coverage: float = 1.0
     """Coverage weight in the proxy reward."""
     proxy_lambda_length: float = 1.0
@@ -261,6 +275,12 @@ def get_reward(model, query_responses, tokenizer, context_length=0):
     return reward_logits[torch.arange(reward_logits.size(0), device=reward_logits.device), sequence_lengths].squeeze(-1)
 
 
+def transform_reward_outputs(args: Args, rewards: torch.Tensor) -> torch.Tensor:
+    if args.reward_output_tanh:
+        return args.reward_output_scale * torch.tanh(rewards)
+    return rewards
+
+
 def proxy_scores(args: Args, tokenizer, query_tokens, response_tokens):
     return batch_proxy_rewards(
         tokenizer,
@@ -271,6 +291,11 @@ def proxy_scores(args: Args, tokenizer, query_tokens, response_tokens):
         mean=args.proxy_reward_mean,
         std=args.proxy_reward_std,
         clip=args.proxy_reward_clip,
+        normalization=args.proxy_reward_normalization,
+        min_value=args.proxy_reward_min,
+        max_value=args.proxy_reward_max,
+        target_min=args.proxy_reward_target_min,
+        target_max=args.proxy_reward_target_max,
         lambda_coverage=args.proxy_lambda_coverage,
         lambda_length=args.proxy_lambda_length,
         lambda_redundancy=args.proxy_lambda_redundancy,
@@ -284,7 +309,7 @@ def evaluate(args: Args, accelerator, tokenizer, model, dataloader):
             query_responses = torch.cat((data["query_chosen_token"], data["query_rejected_token"]), dim=0)
             accumulate_context = contextlib.nullcontext() if args.deepspeed else accelerator.accumulate(model)
             with accumulate_context:
-                predicted_reward = get_reward(model, query_responses, tokenizer)
+                predicted_reward = transform_reward_outputs(args, get_reward(model, query_responses, tokenizer))
                 chosen_rewards = predicted_reward[:data['query_chosen_token'].shape[0]]
                 rejected_rewards = predicted_reward[data['query_chosen_token'].shape[0]:]
                 reward_margin = chosen_rewards - rejected_rewards
@@ -452,9 +477,12 @@ if __name__ == "__main__":
             query_responses = torch.cat((data["query_chosen_token"], data["query_rejected_token"]), dim=0)
             accumulate_context = contextlib.nullcontext() if args.deepspeed else accelerator.accumulate(model)
             with accumulate_context:
-                predicted_reward = get_reward(model, query_responses, tokenizer)
+                raw_predicted_reward = get_reward(model, query_responses, tokenizer)
+                predicted_reward = transform_reward_outputs(args, raw_predicted_reward)
                 chosen_rewards = predicted_reward[:data['query_chosen_token'].shape[0]]
                 rejected_rewards = predicted_reward[data['query_chosen_token'].shape[0]:]
+                raw_chosen_rewards = raw_predicted_reward[:data['query_chosen_token'].shape[0]]
+                raw_rejected_rewards = raw_predicted_reward[data['query_chosen_token'].shape[0]:]
                 reward_margin = chosen_rewards - rejected_rewards
                 if args.residual_learning:
                     chosen_proxy = proxy_scores(args, tokenizer, data["query_token"], data["chosen_token"])
@@ -463,7 +491,9 @@ if __name__ == "__main__":
                 accuracy = (reward_margin > 0).float().mean()
                 loss = -F.logsigmoid(reward_margin).mean()
                 if args.reward_output_l2 > 0:
-                    reward_l2 = 0.5 * (chosen_rewards.float().pow(2).mean() + rejected_rewards.float().pow(2).mean())
+                    reward_l2 = 0.5 * (
+                        raw_chosen_rewards.float().pow(2).mean() + raw_rejected_rewards.float().pow(2).mean()
+                    )
                     loss = loss + args.reward_output_l2 * reward_l2
                 accelerator.backward(loss)
                 optimizer.step()
@@ -524,8 +554,10 @@ if __name__ == "__main__":
             queries = data["query_token"].to(device, non_blocking=True)
             query_responses = data["query_reference_response_token"].to(device, non_blocking=True)
             cat_query_responses = torch.cat((queries, reference_responses), dim=1)
-            cat_predicted_reward = get_reward(model, cat_query_responses, tokenizer, context_length=queries.shape[1])
-            predicted_reward = get_reward(model, query_responses, tokenizer)
+            cat_predicted_reward = transform_reward_outputs(
+                args, get_reward(model, cat_query_responses, tokenizer, context_length=queries.shape[1])
+            )
+            predicted_reward = transform_reward_outputs(args, get_reward(model, query_responses, tokenizer))
             unexpecte_reward_diff = predicted_reward - cat_predicted_reward
             unexpecte_reward_diff_gt_rtol = unexpecte_reward_diff.abs() > rtol
             unexpecte_reward_diff = accelerator.gather(unexpecte_reward_diff)

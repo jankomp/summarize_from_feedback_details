@@ -140,16 +140,30 @@ class Args:
     """the path to the sft model"""
     reward_mode: Literal["learned", "learned_plus_proxy", "proxy_only"] = "learned"
     """Which terminal score to optimize in PPO."""
+    reward_output_tanh: bool = False
+    """Whether to bound learned reward-model scores with tanh before PPO reward composition."""
+    reward_output_scale: float = 1.0
+    """Multiplier applied after tanh when reward_output_tanh is enabled."""
     proxy_reward_scale: float = 0.0
     """Scale applied to the proxy reward before adding it to PPO rewards."""
     proxy_reward_normalize: bool = False
     """Whether to normalize the scaled proxy reward."""
+    proxy_reward_normalization: Literal["zscore", "hero_minmax"] = "zscore"
+    """Proxy normalization rule."""
     proxy_reward_mean: float = 0.0
     """Mean used when proxy_reward_normalize is enabled."""
     proxy_reward_std: float = 1.0
     """Std used when proxy_reward_normalize is enabled."""
     proxy_reward_clip: Optional[float] = None
     """Optional symmetric clip used when proxy_reward_normalize is enabled."""
+    proxy_reward_min: float = 0.9867522559599717
+    """Lower HERO-style calibration anchor for proxy_reward_normalization='hero_minmax'."""
+    proxy_reward_max: float = 1.694445598247719
+    """Upper HERO-style calibration anchor for proxy_reward_normalization='hero_minmax'."""
+    proxy_reward_target_min: float = -1.0
+    """Lower target value for HERO-style proxy normalization."""
+    proxy_reward_target_max: float = 1.0
+    """Upper target value for HERO-style proxy normalization."""
     proxy_lambda_coverage: float = 1.0
     """Coverage weight in the proxy reward."""
     proxy_lambda_length: float = 1.0
@@ -398,10 +412,21 @@ def proxy_scores(args: Args, tokenizer, query_tokens, response_tokens):
         mean=args.proxy_reward_mean,
         std=args.proxy_reward_std,
         clip=args.proxy_reward_clip,
+        normalization=args.proxy_reward_normalization,
+        min_value=args.proxy_reward_min,
+        max_value=args.proxy_reward_max,
+        target_min=args.proxy_reward_target_min,
+        target_max=args.proxy_reward_target_max,
         lambda_coverage=args.proxy_lambda_coverage,
         lambda_length=args.proxy_lambda_length,
         lambda_redundancy=args.proxy_lambda_redundancy,
     )
+
+
+def transform_learned_score(args: Args, score: torch.Tensor) -> torch.Tensor:
+    if args.reward_output_tanh:
+        return args.reward_output_scale * torch.tanh(score)
+    return score
 
 
 def evaluate(reward_model, policy, tokenizer, dataloader, generation_config, sampling=True):
@@ -424,6 +449,7 @@ def evaluate(reward_model, policy, tokenizer, dataloader, generation_config, sam
             postprocessed_responses = truncate_response(args, tokenizer, responses)
             postprocessed_query_responses = torch.cat((queries, postprocessed_responses), 1)
             _, learned_score, _ = get_reward(reward_model, postprocessed_query_responses, tokenizer, queries.shape[1])
+            learned_score = transform_learned_score(args, learned_score)
             proxy_score = proxy_scores(args, tokenizer, queries, postprocessed_responses)
             if args.reward_mode == "learned":
                 score = learned_score
@@ -686,6 +712,7 @@ if __name__ == "__main__":
                 )
                 value = full_value[:, context_length - 1 : -1].squeeze(-1)
                 _, learned_score, _ = get_reward(reward_model, postprocessed_query_response, tokenizer, context_length)
+                learned_score = transform_learned_score(args, learned_score)
                 proxy_score = proxy_scores(args, tokenizer, query, postprocessed_response)
                 if args.reward_mode == "learned":
                     score = learned_score
