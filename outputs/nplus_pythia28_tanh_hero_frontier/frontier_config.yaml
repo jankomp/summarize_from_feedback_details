@@ -1,0 +1,8 @@
+seed: 42
+pairwise_judge:
+  model: gpt-5.6-sol-2026-07-09
+  output_dir: outputs/nplus_pythia28_tanh_hero_frontier/frontier_judge
+  num_prompts: 200
+  seed: 123
+  max_retries: 4
+  request_timeout: 300
